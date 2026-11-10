@@ -14,6 +14,7 @@ from e2b.api.client.api.templates import (
     post_v_2_templates_template_id_builds_build_id,
     get_templates_template_id_builds_build_id_status,
     get_templates_aliases_alias,
+    get_templates_template_id,
 )
 from e2b.api.client.api.tags import (
     post_templates_tags,
@@ -30,13 +31,21 @@ from e2b.api.client.models import (
     DeleteTemplateTagsRequest,
 )
 from e2b.api.client.types import UNSET, Unset
-from e2b.exceptions import BuildException, FileUploadException, TemplateException
+from e2b.exceptions import (
+    BuildException,
+    FileUploadException,
+    InvalidArgumentException,
+    TemplateException,
+    TemplateNotFoundException,
+)
 from e2b.template.logger import LogEntry
 from e2b.template.types import (
     TemplateType,
     BuildStatusReason,
     TemplateBuildStatus,
     TemplateBuildStatusResponse,
+    TemplateInfo,
+    TemplateBuildInfo,
     TemplateTag,
     TemplateTagInfo,
 )
@@ -51,6 +60,7 @@ def request_build(
     cpu_count: Optional[int],
     memory_mb: Optional[int],
     min_free_disk_mb: Optional[int],
+    max_cpu_count: Optional[int] = None,
 ):
     res = post_v3_templates.sync_detailed(
         client=client,
@@ -58,6 +68,7 @@ def request_build(
             name=name,
             tags=tags if tags else UNSET,
             cpu_count=cpu_count if cpu_count is not None else UNSET,
+            max_cpu_count=max_cpu_count if max_cpu_count is not None else UNSET,
             memory_mb=memory_mb if memory_mb is not None else UNSET,
             min_free_disk_mb=(
                 min_free_disk_mb if min_free_disk_mb is not None else UNSET
@@ -443,3 +454,99 @@ def get_template_tags(
         )
         for item in res.parsed
     ]
+
+
+def get_template_info(
+    client: AuthenticatedClient, template_id_or_name: str
+) -> TemplateInfo:
+    """
+    Get a template and its most recent builds.
+
+    Args:
+        client: Authenticated API client
+        template_id_or_name: Template ID or name (a name may be namespaced)
+    """
+    if ":" in template_id_or_name:
+        raise InvalidArgumentException(
+            f"get_info() takes a template name or ID without a tag. "
+            f"Use get_info('{template_id_or_name.split(':')[0]}') instead of get_info('{template_id_or_name}')."
+        )
+
+    # GET /templates/{template_id} takes only an ID; the alias lookup resolves a
+    # name or an ID to it.
+    alias_res = get_templates_aliases_alias.sync_detailed(
+        alias=encode_path_param(template_id_or_name),
+        client=client,
+    )
+
+    if alias_res.status_code == 404:
+        raise TemplateNotFoundException(f"Template '{template_id_or_name}' not found")
+
+    if alias_res.status_code >= 300:
+        raise handle_api_exception(alias_res, TemplateException)
+
+    if alias_res.parsed is None or isinstance(alias_res.parsed, Error):
+        raise TemplateException(f"Failed to resolve template '{template_id_or_name}'")
+
+    res = get_templates_template_id.sync_detailed(
+        template_id=encode_path_param(alias_res.parsed.template_id),
+        client=client,
+    )
+
+    if res.status_code == 404:
+        raise TemplateNotFoundException(f"Template '{template_id_or_name}' not found")
+
+    if res.status_code >= 300:
+        raise handle_api_exception(res, TemplateException)
+
+    if isinstance(res.parsed, Error):
+        raise TemplateException(f"API error: {res.parsed.message}")
+
+    if res.parsed is None:
+        raise TemplateException("Failed to get template info")
+
+    data = res.parsed
+    # The API uses a nil UUID when there is no ready default build.
+    has_default_build = data.build_id != "00000000-0000-0000-0000-000000000000"
+    return TemplateInfo(
+        template_id=data.template_id,
+        build_id=data.build_id if has_default_build else None,
+        names=data.names,
+        public=data.public,
+        cpu_count=data.cpu_count if has_default_build else None,
+        max_cpu_count=(
+            data.max_cpu_count
+            if has_default_build and not isinstance(data.max_cpu_count, Unset)
+            else None
+        ),
+        memory_mb=data.memory_mb if has_default_build else None,
+        disk_size_mb=data.disk_size_mb if has_default_build else None,
+        envd_version=data.envd_version if has_default_build else None,
+        created_at=data.created_at,
+        updated_at=data.updated_at,
+        builds=[
+            TemplateBuildInfo(
+                build_id=str(build.build_id),
+                status=TemplateBuildStatus(build.status.value),
+                cpu_count=build.cpu_count,
+                max_cpu_count=(
+                    build.max_cpu_count
+                    if not isinstance(build.max_cpu_count, Unset)
+                    else None
+                ),
+                memory_mb=build.memory_mb,
+                disk_size_mb=(
+                    build.disk_size_mb
+                    if not isinstance(build.disk_size_mb, Unset)
+                    else None
+                ),
+                created_at=build.created_at,
+                finished_at=(
+                    build.finished_at
+                    if not isinstance(build.finished_at, Unset)
+                    else None
+                ),
+            )
+            for build in data.builds
+        ],
+    )

@@ -9,10 +9,17 @@ from e2b.api.client_sync import get_api_client
 from e2b.template.consts import GZIP, RESOLVE_SYMLINKS
 from e2b.template.logger import LogEntry, LogEntryEnd, LogEntryStart
 from e2b.template.main import TemplateBase, TemplateClass
-from e2b.template.types import BuildInfo, InstructionType, TemplateTag, TemplateTagInfo
+from e2b.template.types import (
+    BuildInfo,
+    InstructionType,
+    TemplateInfo,
+    TemplateTag,
+    TemplateTagInfo,
+)
 from e2b.template_sync.build_api import (
     assign_tags,
     check_alias_exists,
+    get_template_info,
     get_template_tags,
     remove_tags,
     get_build_status,
@@ -37,6 +44,7 @@ class Template(TemplateBase):
         name: str,
         tags: Optional[List[str]] = None,
         cpu_count: Optional[int] = None,
+        max_cpu_count: Optional[int] = None,
         memory_mb: Optional[int] = None,
         min_free_disk_mb: Optional[int] = None,
         skip_cache: bool = False,
@@ -51,6 +59,7 @@ class Template(TemplateBase):
         :param name: Name for the template
         :param tags: Optional tags for the template
         :param cpu_count: Number of CPUs allocated to the sandbox.
+        :param max_cpu_count: Maximum number of CPUs allocated to the sandbox. Setting it makes the template resizable. Must be at least ``cpu_count``.
         :param memory_mb: Amount of memory in MB allocated to the sandbox.
         :param min_free_disk_mb: Requested minimum free space after the build steps, in MiB. Growth is best effort and the filesystem is never shrunk. Omit to use the team default or set to 0 to request no growth.
         :param skip_cache: If True, forces a complete rebuild ignoring cache
@@ -74,6 +83,7 @@ class Template(TemplateBase):
             api_client,
             name=name,
             cpu_count=cpu_count,
+            max_cpu_count=max_cpu_count,
             memory_mb=memory_mb,
             min_free_disk_mb=min_free_disk_mb,
             tags=tags,
@@ -204,6 +214,7 @@ class Template(TemplateBase):
         alias: Optional[str] = None,
         tags: Optional[List[str]] = None,
         cpu_count: Optional[int] = None,
+        max_cpu_count: Optional[int] = None,
         memory_mb: Optional[int] = None,
         min_free_disk_mb: Optional[int] = None,
         skip_cache: bool = False,
@@ -218,6 +229,7 @@ class Template(TemplateBase):
         :param alias: (Deprecated) Alias name for the template. Use name instead.
         :param tags: Optional additional tags to assign to the template
         :param cpu_count: Number of CPUs allocated to the sandbox.
+        :param max_cpu_count: Maximum number of CPUs allocated to the sandbox. Setting it makes the template resizable. Must be at least ``cpu_count``.
         :param memory_mb: Amount of memory in MB allocated to the sandbox.
         :param min_free_disk_mb: Requested minimum free space after the build steps, in MiB. Growth is best effort and the filesystem is never shrunk. Omit to use the team default or set to 0 to request no growth.
         :param skip_cache: If True, forces a complete rebuild ignoring cache
@@ -265,6 +277,7 @@ class Template(TemplateBase):
                 name,
                 tags=tags,
                 cpu_count=cpu_count,
+                max_cpu_count=max_cpu_count,
                 memory_mb=memory_mb,
                 min_free_disk_mb=min_free_disk_mb,
                 skip_cache=skip_cache,
@@ -311,6 +324,7 @@ class Template(TemplateBase):
         alias: Optional[str] = None,
         tags: Optional[List[str]] = None,
         cpu_count: Optional[int] = None,
+        max_cpu_count: Optional[int] = None,
         memory_mb: Optional[int] = None,
         min_free_disk_mb: Optional[int] = None,
         skip_cache: bool = False,
@@ -325,6 +339,7 @@ class Template(TemplateBase):
         :param alias: (Deprecated) Alias name for the template. Use name instead.
         :param tags: Optional additional tags to assign to the template
         :param cpu_count: Number of CPUs allocated to the sandbox.
+        :param max_cpu_count: Maximum number of CPUs allocated to the sandbox. Setting it makes the template resizable. Must be at least ``cpu_count``.
         :param memory_mb: Amount of memory in MB allocated to the sandbox.
         :param min_free_disk_mb: Requested minimum free space after the build steps, in MiB. Growth is best effort and the filesystem is never shrunk. Omit to use the team default or set to 0 to request no growth.
         :param skip_cache: If True, forces a complete rebuild ignoring cache
@@ -362,6 +377,7 @@ class Template(TemplateBase):
             name,
             tags=tags,
             cpu_count=cpu_count,
+            max_cpu_count=max_cpu_count,
             memory_mb=memory_mb,
             min_free_disk_mb=min_free_disk_mb,
             skip_cache=skip_cache,
@@ -551,3 +567,34 @@ class Template(TemplateBase):
         )
 
         return get_template_tags(api_client, template_id)
+
+    @classmethod
+    def get_info(
+        cls,
+        name: str,
+        **opts: Unpack[ApiParams],
+    ) -> TemplateInfo:
+        """
+        Get one of your team's templates and its recent builds, with their CPU counts.
+
+        :param name: Template name or ID without a tag
+        :return: The template and up to 100 most recent builds, newest first
+        :raises InvalidArgumentException: If ``name`` includes a tag (``name:tag``)
+        :raises TemplateNotFoundException: If the template doesn't exist
+        :raises TemplateException: If the request fails
+
+        Example
+        ```python
+        from e2b import Template
+
+        info = Template.get_info('my-template')
+        if info.build_id is not None:
+            print(f"CPUs: {info.cpu_count}, max: {info.max_cpu_count or info.cpu_count}")
+        ```
+        """
+        config = ConnectionConfig(**cls._resolve_api_params(**opts))
+        api_client = get_api_client(
+            config,
+        )
+
+        return get_template_info(api_client, name)

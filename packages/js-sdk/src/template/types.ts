@@ -40,6 +40,11 @@ export type BasicBuildOptions = {
    */
   cpuCount?: number
   /**
+   * Maximum number of CPUs allocated to the sandbox.
+   * Setting it makes the template resizable. Must be at least `cpuCount`.
+   */
+  maxCpuCount?: number
+  /**
    * Amount of memory in MB allocated to the sandbox.
    */
   memoryMB?: number
@@ -90,6 +95,99 @@ export type BuildInfo = {
    * Build identifier.
    */
   buildId: string
+}
+
+/**
+ * A single build of a template.
+ */
+export type TemplateBuildInfo = {
+  /**
+   * Build identifier.
+   */
+  buildId: string
+  /**
+   * Status of the build.
+   */
+  status: TemplateBuildStatus
+  /**
+   * Default CPU count.
+   */
+  cpuCount: number
+  /**
+   * Max CPU count. Undefined for a fixed-size build.
+   */
+  maxCpuCount?: number
+  /**
+   * Memory in MiB.
+   */
+  memoryMB: number
+  /**
+   * Disk size in MiB.
+   */
+  diskSizeMB?: number
+  /**
+   * When the build was created.
+   */
+  createdAt: Date
+  /**
+   * When the build finished.
+   */
+  finishedAt?: Date
+}
+
+/**
+ * Information about a template and its builds.
+ * `buildId` and resource fields are undefined when no ready default build exists.
+ */
+export type TemplateInfo = {
+  /**
+   * Template identifier.
+   */
+  templateId: string
+  /**
+   * Identifier of the template's default build.
+   */
+  buildId?: string
+  /**
+   * Names of the template.
+   */
+  names: string[]
+  /**
+   * Whether the template is public.
+   */
+  public: boolean
+  /**
+   * Default CPU count of the default build.
+   */
+  cpuCount?: number
+  /**
+   * Max CPU count of the default build. Undefined for a fixed-size template or when no ready default build exists.
+   */
+  maxCpuCount?: number
+  /**
+   * Memory in MiB of the default build.
+   */
+  memoryMB?: number
+  /**
+   * Disk size in MiB of the default build.
+   */
+  diskSizeMB?: number
+  /**
+   * Envd version of the default build.
+   */
+  envdVersion?: string
+  /**
+   * When the template was created.
+   */
+  createdAt: Date
+  /**
+   * When the template was last updated.
+   */
+  updatedAt: Date
+  /**
+   * Up to 100 most recent builds, newest first.
+   */
+  builds: TemplateBuildInfo[]
 }
 
 /**

@@ -48,6 +48,18 @@ const handlers = [apiUrl, boundApiUrl].flatMap((url) => [
     recordRequest(request)
     return HttpResponse.json({ aliases: [], templateID: 'template-id' })
   }),
+  http.get(url('/templates/:templateID'), ({ request }) => {
+    recordRequest(request)
+    return HttpResponse.json({
+      templateID: 'template-id',
+      buildID: '00000000-0000-0000-0000-000000000000',
+      names: [],
+      public: false,
+      createdAt: '2024-01-15T10:30:00Z',
+      updatedAt: '2024-01-15T10:30:00Z',
+      builds: [],
+    })
+  }),
   http.post(url('/templates/tags'), async ({ request }) => {
     recordRequest(request)
     return HttpResponse.json({
@@ -113,12 +125,13 @@ test('subclass bound options are used as defaults', async () => {
   await BoundTemplate.aliasExists('my-template')
   await BoundTemplate.assignTags('my-template:v1.0', 'production')
   await BoundTemplate.removeTags('my-template', 'production')
+  await BoundTemplate.getInfo('my-template')
   await BoundTemplate.buildInBackground(
     Template().fromBaseImage(),
     'my-template'
   )
 
-  expect(requests.length).toBe(7)
+  expect(requests.length).toBe(9)
   for (const request of requests) {
     expect(request.apiKey).toBe(BOUND_API_KEY)
     expect(request.url).toContain(`api.${BOUND_DOMAIN}`)
@@ -187,4 +200,23 @@ test.each([
       ...(expected === undefined ? {} : { minFreeDiskMb: expected }),
     },
   ])
+})
+
+test.each([
+  [{}, {}],
+  [
+    { cpuCount: 2, maxCpuCount: 4 },
+    { cpuCount: 2, maxCpuCount: 4 },
+  ],
+])('build sends the CPU options %j', async (options, expected) => {
+  await Template.buildInBackground(
+    Template().fromTemplate('parent'),
+    'resizable',
+    {
+      apiKey: TEST_API_KEY,
+      ...options,
+    }
+  )
+
+  expect(buildRequestBodies).toEqual([{ name: 'resizable', ...expected }])
 })

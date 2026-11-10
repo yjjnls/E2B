@@ -194,6 +194,12 @@ class TemplateException(SandboxException):
     """
 
 
+class TemplateNotFoundException(TemplateException):
+    """
+    Raised when a template is not found.
+    """
+
+
 class RateLimitException(SandboxException):
     """
     Raised when the API rate limit is exceeded.

@@ -11,6 +11,7 @@ import { callableTemplate } from './callable'
 import {
   assignTags,
   checkAliasExists,
+  getTemplateInfo,
   getTemplateTags,
   removeTags,
   getBuildStatus,
@@ -39,6 +40,7 @@ import {
   TemplateClass,
   TemplateFinal,
   TemplateFromImage,
+  TemplateInfo,
   TemplateOptions,
   TemplateTag,
   TemplateTagInfo,
@@ -426,6 +428,37 @@ export class TemplateBase
     return getTemplateTags(
       client,
       { templateID: templateId },
+      config.getSignal(undefined, options?.signal)
+    )
+  }
+
+  /**
+   * Get one of your team's templates and its recent builds, with their CPU counts.
+   *
+   * @param name Template name or ID without a tag
+   * @param options Authentication options
+   * @returns The template and up to 100 most recent builds, newest first
+   * @throws {InvalidArgumentError} If `name` includes a tag (`name:tag`)
+   * @throws {TemplateNotFoundError} If the template doesn't exist
+   * @throws {TemplateError} If the request fails
+   *
+   * @example
+   * ```ts
+   * const info = await Template.getInfo('my-template')
+   * if (info.buildId) {
+   *   console.log(`CPUs: ${info.cpuCount}, max: ${info.maxCpuCount ?? info.cpuCount}`)
+   * }
+   * ```
+   */
+  static async getInfo(
+    name: string,
+    options?: ConnectionOpts
+  ): Promise<TemplateInfo> {
+    const config = new ConnectionConfig(this.resolveOpts(options))
+    const client = new ApiClient(config)
+    return getTemplateInfo(
+      client,
+      { name },
       config.getSignal(undefined, options?.signal)
     )
   }
@@ -1077,6 +1110,7 @@ export class TemplateBase
         name,
         tags: options.tags,
         cpuCount: options.cpuCount,
+        maxCpuCount: options.maxCpuCount,
         memoryMB: options.memoryMB,
         minFreeDiskMb: options.minFreeDiskMb,
       },
@@ -1304,6 +1338,8 @@ export type {
   TemplateBuildStatus,
   TemplateBuildStatusResponse,
   TemplateClass,
+  TemplateInfo,
+  TemplateBuildInfo,
   TemplateTag,
   TemplateTagInfo,
 } from './types'

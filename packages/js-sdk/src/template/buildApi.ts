@@ -4,7 +4,13 @@ import stream from 'node:stream'
 import { ApiClient, handleApiError, components } from '../api'
 import { buildRequestSignal } from '../connectionConfig'
 import { loadUndici } from '../undici'
-import { BuildError, FileUploadError, TemplateError } from '../errors'
+import {
+  BuildError,
+  FileUploadError,
+  InvalidArgumentError,
+  TemplateError,
+  TemplateNotFoundError,
+} from '../errors'
 import { FILE_UPLOAD_TIMEOUT_MS } from './consts'
 import { LogEntry } from './logger'
 import { getBuildStepIndex, spoolTarArchive } from './utils'
@@ -12,6 +18,7 @@ import {
   BuildStatusReason,
   TemplateBuildStatus,
   TemplateBuildStatusResponse,
+  TemplateInfo,
   TemplateTag,
   TemplateTagInfo,
 } from './types'
@@ -20,6 +27,7 @@ type RequestBuildInput = {
   name: string
   tags?: string[]
   cpuCount?: number
+  maxCpuCount?: number
   memoryMB?: number
   minFreeDiskMb?: number
 }
@@ -51,7 +59,14 @@ export type TriggerBuildTemplate = components['schemas']['TemplateBuildStartV2']
 
 export async function requestBuild(
   client: ApiClient,
-  { name, tags, cpuCount, memoryMB, minFreeDiskMb }: RequestBuildInput,
+  {
+    name,
+    tags,
+    cpuCount,
+    maxCpuCount,
+    memoryMB,
+    minFreeDiskMb,
+  }: RequestBuildInput,
   signal?: AbortSignal
 ) {
   const requestBuildRes = await client.api.POST('/v3/templates', {
@@ -59,6 +74,7 @@ export async function requestBuild(
       name,
       tags,
       cpuCount,
+      maxCpuCount,
       memoryMB,
       minFreeDiskMb,
     },
@@ -485,4 +501,92 @@ export async function getTemplateTags(
     buildId: item.buildID,
     createdAt: new Date(item.createdAt),
   }))
+}
+
+export async function getTemplateInfo(
+  client: ApiClient,
+  { name }: { name: string },
+  signal?: AbortSignal
+): Promise<TemplateInfo> {
+  if (name.includes(':')) {
+    throw new InvalidArgumentError(
+      `Template.getInfo() takes a template name or ID without a tag. Use Template.getInfo('${name.split(':')[0]}') instead of Template.getInfo('${name}').`
+    )
+  }
+
+  // GET /templates/{templateID} takes only an ID; the alias lookup resolves a
+  // name or an ID to it.
+  const aliasRes = await client.api.GET('/templates/aliases/{alias}', {
+    params: {
+      path: {
+        alias: name,
+      },
+    },
+    signal,
+  })
+
+  if (aliasRes.response.status === 404) {
+    throw new TemplateNotFoundError(`Template '${name}' not found`)
+  }
+
+  const aliasError = handleApiError(aliasRes, TemplateError)
+  if (aliasError) {
+    throw aliasError
+  }
+
+  if (!aliasRes.data) {
+    throw new TemplateError(`Failed to resolve template '${name}'`)
+  }
+
+  const res = await client.api.GET('/templates/{templateID}', {
+    params: {
+      path: {
+        templateID: aliasRes.data.templateID,
+      },
+    },
+    signal,
+  })
+
+  if (res.response.status === 404) {
+    throw new TemplateNotFoundError(`Template '${name}' not found`)
+  }
+
+  const error = handleApiError(res, TemplateError)
+  if (error) {
+    throw error
+  }
+
+  if (!res.data) {
+    throw new TemplateError('Failed to get template info')
+  }
+
+  const data = res.data
+  // The API uses a nil UUID when there is no ready default build.
+  const hasDefaultBuild =
+    data.buildID !== '00000000-0000-0000-0000-000000000000'
+  return {
+    templateId: data.templateID,
+    buildId: hasDefaultBuild ? data.buildID : undefined,
+    names: data.names,
+    public: data.public,
+    cpuCount: hasDefaultBuild ? data.cpuCount : undefined,
+    maxCpuCount: hasDefaultBuild ? data.maxCpuCount : undefined,
+    memoryMB: hasDefaultBuild ? data.memoryMB : undefined,
+    diskSizeMB: hasDefaultBuild ? data.diskSizeMB : undefined,
+    envdVersion: hasDefaultBuild ? data.envdVersion : undefined,
+    createdAt: new Date(data.createdAt),
+    updatedAt: new Date(data.updatedAt),
+    builds: data.builds.map(
+      (build: components['schemas']['TemplateBuild']) => ({
+        buildId: build.buildID,
+        status: build.status,
+        cpuCount: build.cpuCount,
+        maxCpuCount: build.maxCpuCount,
+        memoryMB: build.memoryMB,
+        diskSizeMB: build.diskSizeMB,
+        createdAt: new Date(build.createdAt),
+        finishedAt: build.finishedAt ? new Date(build.finishedAt) : undefined,
+      })
+    ),
+  }
 }

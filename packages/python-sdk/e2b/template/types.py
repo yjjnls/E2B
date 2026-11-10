@@ -192,3 +192,79 @@ class BuildInfo:
     # Deprecated: use name instead
     alias: str
     tags: List[str] = field(default_factory=list)
+
+
+@dataclass
+class TemplateBuildInfo:
+    """
+    A single build of a template.
+    """
+
+    build_id: str
+    """Build identifier."""
+
+    status: TemplateBuildStatus
+    """Status of the build."""
+
+    cpu_count: int
+    """Default CPU count."""
+
+    memory_mb: int
+    """Memory in MiB."""
+
+    created_at: datetime
+    """When the build was created."""
+
+    max_cpu_count: Optional[int] = None
+    """Max CPU count. None for a fixed-size build."""
+
+    disk_size_mb: Optional[int] = None
+    """Disk size in MiB."""
+
+    finished_at: Optional[datetime] = None
+    """When the build finished."""
+
+
+@dataclass
+class TemplateInfo:
+    """
+    Information about a template and its builds.
+
+    ``build_id`` and resource fields are None when no ready default build exists.
+    """
+
+    template_id: str
+    """Template identifier."""
+
+    build_id: Optional[str]
+    """Identifier of the template's default build."""
+
+    names: List[str]
+    """Names of the template."""
+
+    public: bool
+    """Whether the template is public."""
+
+    cpu_count: Optional[int]
+    """Default CPU count of the default build."""
+
+    memory_mb: Optional[int]
+    """Memory in MiB of the default build."""
+
+    disk_size_mb: Optional[int]
+    """Disk size in MiB of the default build."""
+
+    envd_version: Optional[str]
+    """Envd version of the default build."""
+
+    created_at: datetime
+    """When the template was created."""
+
+    updated_at: datetime
+    """When the template was last updated."""
+
+    builds: List[TemplateBuildInfo]
+    """Up to 100 most recent builds, newest first."""
+
+    max_cpu_count: Optional[int] = None
+    """Max CPU count of the default build. None for a fixed-size template or when no ready default build exists."""
